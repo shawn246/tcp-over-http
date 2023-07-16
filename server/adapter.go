@@ -23,7 +23,6 @@ var (
 type adapter struct {
 	id   string
 	conn net.Conn
-	buff []byte
 }
 
 func getAdapter(id string) *adapter {
@@ -53,7 +52,6 @@ func newAdapter(id, target string) (*adapter, error) {
 	ad := &adapter{
 		id:   id,
 		conn: conn,
-		buff: make([]byte, constant.BuffSize),
 	}
 	adapters[id] = ad
 
@@ -77,7 +75,7 @@ func (a *adapter) doProxy(c *gin.Context) error {
 	data, err := a.read()
 	if err == nil {
 		c.Writer.Header().Set("Proxy-Has-Next", "true")
-	} else if !errors.Is(err, os.ErrDeadlineExceeded) {
+	} else if !errors.Is(err, os.ErrDeadlineExceeded) && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("tcp read data: %w", err)
 	}
 
@@ -89,6 +87,7 @@ func (a *adapter) doProxy(c *gin.Context) error {
 func (a *adapter) read() ([]byte, error) {
 	var data []byte
 	buff := make([]byte, constant.BuffSize)
+
 	for i := 0; i < 3; i++ {
 		_ = a.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		if n, err := a.conn.Read(buff); err == nil {
