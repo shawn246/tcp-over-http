@@ -28,8 +28,6 @@ func RegisterCmd(root *cobra.Command) {
 		Use:   "client",
 		Short: "proxy client mode",
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg.Url = "http://localhost:80/proxy"
-			cfg.Target = "172.18.224.250:3306"
 			run(cmd.Context(), cfg)
 		},
 	}
