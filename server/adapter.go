@@ -21,8 +21,8 @@ var (
 )
 
 type adapter struct {
-	id   string
-	conn net.Conn
+	id     string
+	conn   net.Conn
 }
 
 func getAdapter(id string) *adapter {
@@ -53,51 +53,61 @@ func newAdapter(id, target string) (*adapter, error) {
 		id:   id,
 		conn: conn,
 	}
-	adapters[id] = ad
 
+	adapters[id] = ad
 	return ad, nil
 }
 
-func (a *adapter) doProxy(c *gin.Context) error {
+func (a *adapter) write(c *gin.Context) error {
 	raw, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		return fmt.Errorf("read request body: %w", err)
+	} else if len(raw) == 0 {
+		return nil
 	}
 
-	if len(raw) > 0 {
-		log.Debug().Str("id", a.id).Msgf("received %d bytes", len(raw))
-
-		if _, err = a.conn.Write(raw); err != nil {
-			return fmt.Errorf("tcp write data: %w", err)
-		}
+	if _, err = a.conn.Write(raw); err != nil {
+		return fmt.Errorf("tcp write data: %w", err)
 	}
 
-	data, err := a.read()
-	if err == nil {
-		c.Writer.Header().Set("Proxy-Has-Next", "true")
-	} else if !errors.Is(err, os.ErrDeadlineExceeded) && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("tcp read data: %w", err)
-	}
-
-	c.Data(http.StatusOK, "application/octet-stream", data)
-	log.Debug().Str("id", a.id).Msgf("send %d bytes", len(data))
+	log.Debug().Str("id", a.id).Msgf("received %d bytes", len(raw))
 	return nil
 }
 
-func (a *adapter) read() ([]byte, error) {
+func (a *adapter) read(c *gin.Context) error {
 	var data []byte
-	buff := make([]byte, constant.BuffSize)
+	var err error
+	var n int
 
-	for i := 0; i < 3; i++ {
-		_ = a.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
-		if n, err := a.conn.Read(buff); err == nil {
+	buff := make([]byte, constant.BuffSize)
+	failed := 0
+
+	for i := 0; i < 100; i++ {
+		if failed >= 3 {
+			break
+		}
+
+		dur := time.Millisecond * 100
+		if i == 0 {
+			dur = time.Minute * 5
+		}
+
+		_ = a.conn.SetReadDeadline(time.Now().Add(dur))
+		if n, err = a.conn.Read(buff); err == nil {
 			data = append(data, buff[0:n]...)
+		} else if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, io.EOF) {
+			err = nil
+			failed += 1
 		} else {
-			return data, err
+			break
 		}
 	}
 
-	return data, nil
+	if len(data) > 0 {
+		c.Data(http.StatusOK, "application/octet-stream", data)
+		log.Debug().Str("id", a.id).Msgf("send %d bytes", len(data))
+	}
+	return err
 }
 
 func (a *adapter) shutdown() {

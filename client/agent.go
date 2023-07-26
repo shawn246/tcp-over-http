@@ -47,22 +47,26 @@ func (a *agent) work() {
 			Msg("connection closed")
 	}()
 
-	if err = a.doProxy(ctx, constant.Establish, nil); err != nil {
+	if _, err = a.proxy(ctx, constant.Establish, nil); err != nil {
 		log.Error().Err(err).Str("id", a.id).Msg("proxy failed")
 		return
 	}
+
+	go a.write(ctx)
 
 	buff := make([]byte, constant.BuffSize)
 	n := 0
 	for {
 		if n, err = a.conn.Read(buff); err == nil {
-			err = a.doProxy(ctx, constant.Forward, buff[0:n])
+			_, _ = a.proxy(ctx, constant.Write, buff[0:n])
 		}
 
 		if errors.Is(err, io.EOF) {
-			_ = a.doProxy(ctx, constant.Goodbye, nil)
+			_, _ = a.proxy(ctx, constant.Goodbye, nil)
+			_ = a.conn.Close()
 			return
 		}
+
 		if err != nil {
 			log.Error().Err(err).Str("id", a.id).Msg("proxy failed")
 			return
@@ -70,8 +74,27 @@ func (a *agent) work() {
 	}
 }
 
-func (a *agent) doProxy(ctx context.Context, action string, data []byte) error {
-	ctxTimeout, cancel := context.WithTimeout(ctx, time.Second*10)
+func (a *agent) write(ctx context.Context) {
+	for {
+		raw, err := a.proxy(ctx, constant.Read, nil)
+		if err != nil {
+			log.Error().Err(err).Str("id", a.id).Msg("proxy failed")
+			break
+		}
+
+		if len(raw) > 0 {
+			if _, err = a.conn.Write(raw); err != nil {
+				log.Error().Err(err).Str("id", a.id).Msg("tcp write data failed")
+				break
+			}
+
+			log.Debug().Str("id", a.id).Msgf("received %d bytes", len(raw))
+		}
+	}
+}
+
+func (a *agent) proxy(ctx context.Context, action string, data []byte) ([]byte, error) {
+	ctxTimeout, cancel := context.WithTimeout(ctx, time.Minute*6)
 	defer cancel()
 
 	var reader io.Reader
@@ -82,7 +105,7 @@ func (a *agent) doProxy(ctx context.Context, action string, data []byte) error {
 	}
 	req, err := http.NewRequestWithContext(ctxTimeout, http.MethodPost, a.url, reader)
 	if err != nil {
-		return fmt.Errorf("new http request: %w", err)
+		return nil, fmt.Errorf("new http request: %w", err)
 	}
 
 	req.Header.Set("Proxy-Id", a.id)
@@ -91,29 +114,17 @@ func (a *agent) doProxy(ctx context.Context, action string, data []byte) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("do http request: %w", err)
+		return nil, fmt.Errorf("do http request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("do http request: status code %d", resp.StatusCode)
+		return nil, fmt.Errorf("do http request: status code %d", resp.StatusCode)
 	}
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response body: %w", err)
+		return nil, fmt.Errorf("read response body: %w", err)
 	}
-
-	if len(raw) > 0 {
-		log.Debug().Str("id", a.id).Msgf("received %d bytes", len(raw))
-
-		if _, err = a.conn.Write(raw); err != nil {
-			return fmt.Errorf("tcp write data: %w", err)
-		}
-	}
-
-	if resp.Header.Get("Proxy-Has-Next") == "true" {
-		return a.doProxy(ctx, constant.Require, nil)
-	}
-	return nil
+	return raw, nil
 }

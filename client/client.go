@@ -34,7 +34,7 @@ func RegisterCmd(root *cobra.Command) {
 	clientCmd.Flags().IntVarP(&cfg.Port, "port", "p", 9090, "listen port")
 	clientCmd.Flags().StringVarP(&cfg.Url, "url", "u", "", "proxy server url, example: http://localhost:9000/proxy")
 	clientCmd.Flags().StringVarP(&cfg.Target, "target", "t", "mysql:3306", "target network, example: mysql:3306")
-	//_ = clientCmd.MarkFlagRequired("url")
+	_ = clientCmd.MarkFlagRequired("url")
 	//_ = clientCmd.MarkFlagRequired("target")
 
 	root.AddCommand(clientCmd)

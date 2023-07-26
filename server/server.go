@@ -68,6 +68,8 @@ func healthHandler(c *gin.Context) {
 }
 
 func proxyHandler(c *gin.Context) {
+	defer c.Request.Body.Close()
+
 	id := c.GetHeader("Proxy-Id")
 	action := c.GetHeader("Proxy-Action")
 	target := c.GetHeader("Proxy-Target")
@@ -84,25 +86,26 @@ func proxyHandler(c *gin.Context) {
 			c.Status(http.StatusInternalServerError)
 			return
 		}
-
-		log.Info().Str("id", id).Str("target", target).Msgf("new connection established")
-
-		defer c.Request.Body.Close()
-		if err = ad.doProxy(c); err != nil {
-			log.Error().Err(err).Str("id", id).Msgf("proxy failed")
-			return
-		}
-	case constant.Forward, constant.Require:
+		log.Info().Str("id", ad.id).Str("target", target).Msgf("new connection established")
+	case constant.Read:
 		ad := getAdapter(id)
 		if ad == nil {
 			c.Status(http.StatusBadRequest)
 			return
 		}
 
-		defer c.Request.Body.Close()
-		if err := ad.doProxy(c); err != nil {
-			log.Error().Err(err).Str("id", id).Msgf("proxy failed")
+		if err := ad.read(c); err != nil {
+			log.Error().Err(err).Str("id", id).Msgf("read failed")
+		}
+	case constant.Write:
+		ad := getAdapter(id)
+		if ad == nil {
+			c.Status(http.StatusBadRequest)
 			return
+		}
+
+		if err := ad.write(c); err != nil {
+			log.Error().Err(err).Str("id", id).Msgf("write failed")
 		}
 	case constant.Goodbye:
 		deleteAdapter(id)

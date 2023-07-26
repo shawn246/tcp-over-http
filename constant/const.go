@@ -2,9 +2,11 @@ package constant
 
 const (
 	Establish = "establish"
-	Forward = "forward"
-	Require = "require"
-	Goodbye = "goodbye"
+	Forward   = "forward"
+	Require   = "require"
+	Read      = "read"
+	Write     = "write"
+	Goodbye   = "goodbye"
 )
 
 const BuffSize = 10000
