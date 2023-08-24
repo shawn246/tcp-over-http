@@ -28,8 +28,8 @@ func RegisterCmd(root *cobra.Command) {
 			run(cmd.Context(), cfg)
 		},
 	}
-	scanCmd.Flags().StringVarP(&cfg.Host, "host", "h", "", "remote address, example 192.168.10.10:502")
-	_ = scanCmd.MarkFlagRequired("host")
+	scanCmd.Flags().StringVarP(&cfg.Host, "remote", "r", "", "remote address, example 192.168.10.10:502")
+	_ = scanCmd.MarkFlagRequired("remote")
 	root.AddCommand(scanCmd)
 }
 
